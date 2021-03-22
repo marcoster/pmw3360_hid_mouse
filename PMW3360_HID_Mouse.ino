@@ -1,4 +1,5 @@
 #include <PMW3360.h>
+#include <RotaryEncoder.h>
 #include <Mouse.h>
 
 // WARNING: This example works only in Native USB supporting boards (e.g., Micro, Leonardo, etc.)
@@ -51,6 +52,8 @@ Module   Arduino
 #define BTN1 9          // left button pin
 #define BTN2 18          // right button pin
 #define BTN3 20
+#define ENCODER_A 6
+#define ENCODER_B 7
 #define DEBOUNCE  10    // debounce itme in ms. Minimun time required for a button to be stabilized.
 
 int btn_pins[NUMBTN] = { BTN1, BTN2, BTN3 };
@@ -60,7 +63,9 @@ uint16_t ymax = 0;
 
 // Don't need touch below.
 PMW3360 sensor;
+RotaryEncoder encoder(ENCODER_A, ENCODER_B, RotaryEncoder::LatchMode::TWO03);
 volatile bool motion = false;
+volatile bool encoderEvent = false;
 
 // button pins & debounce buffers
 bool btn_state[NUMBTN] = { false, false };
@@ -87,6 +92,9 @@ void setup() {
   //if(digitalRead(MOT) == LOW) {
   //  motion = true;
   //}
+
+  attachInterrupt(ENCODER_A, checkPosition, CHANGE);
+  attachInterrupt(ENCODER_B, checkPosition, CHANGE);
   Mouse.begin();
   buttons_init();
 }
@@ -110,12 +118,36 @@ void loop() {
       }
       //Serial.printf("%d / %d\n", data.dx, data.dy);
       Serial.printf("%d / %d\n", xmax, ymax);
-
-
-    }
+    }// if
     //motion = false;
     //sei();
   //}
+
+
+  if(encoderEvent == true) {
+    static int pos = 0;
+    int newPos = encoder.getPosition();
+    int dir = (int)encoder.getDirection();
+    encoderEvent = false;
+    Serial.printf("enc pos/dir: %d/%d\n", pos, dir);
+    Mouse.move(0, 0, (pos - newPos));
+    pos = newPos;
+  }
+//
+//  int newPos = encoder.getPosition();
+//  if (pos != newPos) {
+//    Serial.print("pos:");
+//    Serial.print(newPos);
+//    Serial.print(" dir:");
+//    Serial.println((int)(encoder.getDirection()));
+//    pos = newPos;
+//  } 
+}
+
+void checkPosition()
+{
+  encoder.tick(); // just call tick() to check the state.
+  encoderEvent = true;
 }
 
 void motionDetected() // interrupt service routine should be minimized.
