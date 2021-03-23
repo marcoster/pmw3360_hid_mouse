@@ -46,32 +46,36 @@ Module   Arduino
  */
 
 // User define values
-#define SS  10          // Slave Select pin. Connect this to SS on the module.
-#define MOT 17
-#define NUMBTN 3        // number of buttons attached
-#define BTN1 9          // left button pin
-#define BTN2 18          // right button pin
-#define BTN3 20
+#define SS        10          // Slave Select pin. Connect this to SS on the module.
+#define MOT       17
+#define NUMBTN    5        // number of buttons attached
+#define BTN1      9          // left button pin
+#define BTN2      18          // right button pin
+#define BTN3      20
+#define BTN4      5
+#define BTN5      3
 #define ENCODER_A 6
 #define ENCODER_B 7
 #define DEBOUNCE  10    // debounce itme in ms. Minimun time required for a button to be stabilized.
 
-int btn_pins[NUMBTN] = { BTN1, BTN2, BTN3 };
-char btn_keys[NUMBTN] = { MOUSE_LEFT, MOUSE_RIGHT, MOUSE_MIDDLE };
+// buttons
+int btn_pins[NUMBTN] = { BTN1, BTN2, BTN3, BTN4, BTN5 };
+char btn_keys[NUMBTN] = { MOUSE_LEFT, MOUSE_RIGHT, MOUSE_MIDDLE, MOUSE_FORWARD, MOUSE_BACK };
+bool btn_state[NUMBTN] = { false, false };
+uint8_t btn_buffers[NUMBTN] = {0xFF, 0xFF};
+unsigned long lastButtonCheck = 0;
+
+// sensor
+PMW3360 sensor;
 uint16_t xmax = 0;
 uint16_t ymax = 0;
 
-// Don't need touch below.
-PMW3360 sensor;
+// encoder
 RotaryEncoder encoder(ENCODER_A, ENCODER_B, RotaryEncoder::LatchMode::TWO03);
 volatile bool motion = false;
 volatile bool encoderEvent = false;
 
-// button pins & debounce buffers
-bool btn_state[NUMBTN] = { false, false };
-uint8_t btn_buffers[NUMBTN] = {0xFF, 0xFF};
-
-unsigned long lastButtonCheck = 0;
+lp22ghost
 
 void setup() {
   Serial.begin(9600);  
@@ -117,7 +121,7 @@ void loop() {
         ymax = abs(data.dy);
       }
       //Serial.printf("%d / %d\n", data.dx, data.dy);
-      Serial.printf("%d / %d\n", xmax, ymax);
+      //Serial.printf("%d / %d\n", xmax, ymax);
     }// if
     //motion = false;
     //sei();
@@ -129,19 +133,10 @@ void loop() {
     int newPos = encoder.getPosition();
     int dir = (int)encoder.getDirection();
     encoderEvent = false;
-    Serial.printf("enc pos/dir: %d/%d\n", pos, dir);
+    //Serial.printf("enc pos/dir: %d/%d\n", pos, dir);
     Mouse.move(0, 0, (pos - newPos));
     pos = newPos;
   }
-//
-//  int newPos = encoder.getPosition();
-//  if (pos != newPos) {
-//    Serial.print("pos:");
-//    Serial.print(newPos);
-//    Serial.print(" dir:");
-//    Serial.println((int)(encoder.getDirection()));
-//    pos = newPos;
-//  } 
 }
 
 void checkPosition()
