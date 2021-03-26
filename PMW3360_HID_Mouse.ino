@@ -1,6 +1,7 @@
 #include <PMW3360.h>
 #include <RotaryEncoder.h>
 #include <Mouse.h>
+#include "latchbutton.h"
 
 // WARNING: This example works only in Native USB supporting boards (e.g., Micro, Leonardo, etc.)
 
@@ -44,36 +45,74 @@ Module   Arduino
   - PMW3360_DATA.shutter       : unsigned int, shutter is adjusted to keep the average
                                raw data values within normal operating ranges.
  */
-
+//---- DEFINITIONS ----//
 // User define values
 #define PMW_SS          10          // Slave Select pin. Connect this to SS on the module.
 #define PMW_MOT         17
-#define NUMBTN          5        // number of buttons attached
-#define BTN_LEFT_NO     9          // left button pin
-#define BTN_LEFT_NC     8
-#define BTN_RIGHT_NO    18          // right button pin
-#define BTN_RIGHT_NC    19
-#define BTN_MIDDLE_NO   20
-#define BTN_MIDDLE_NC   21
-#define BTN_FORWARD_NO  5
-#define BTN_FORWARD_NC  4
-#define BTN_BACK_NO     3
-#define BTN_BACK_NC     2
+
+#define NUM_BUTTONS        5        // number of buttons attached
+#define BUTTON_LEFT_NO     9          // left button pin
+#define BUTTON_LEFT_NC     8
+#define BUTTON_RIGHT_NO    18          // right button pin
+#define BUTTON_RIGHT_NC    19
+#define BUTTON_MIDDLE_NO   20
+#define BUTTON_MIDDLE_NC   21
+#define BUTTON_FORWARD_NO  5
+#define BUTTON_FORWARD_NC  4
+#define BUTTON_BACK_NO     3
+#define BUTTON_BACK_NC     2
+#define BUTTON_DPI_NO      16
+#define BUTTON_DPI_NC      15
+
+#define BUTTON_LIFTOFF  22
+
 #define ENCODER_A       6
 #define ENCODER_B       7
 
-#define PMW_USE_INTERRUPT 0
-#define DEBOUNCE          10
+#define NUM_LEDS        3
+#define LED_RED         14
+#define LED_GREEN       1
+#define LED_BLUE        0
 
-// buttons
-int btn_pins[NUMBTN] = { BTN_LEFT_NO, BTN_RIGHT_NO, BTN_MIDDLE_NO, BTN_FORWARD_NO, BTN_BACK_NO };
-char btn_keys[NUMBTN] = { MOUSE_LEFT, MOUSE_RIGHT, MOUSE_MIDDLE, MOUSE_FORWARD, MOUSE_BACK };
-bool btn_state[NUMBTN] = { false, false };
-uint8_t btn_buffers[NUMBTN] = { 0xFF, 0xFF };
-unsigned long lastButtonCheck = 0;
+#define PMW_USE_INTERRUPT 0
+#define NUM_CPI_SETTINGS  4
+
+
+//---- FUNCTION PROTOTYPES ----//
+void button_dpi_on_change(bool is_pressed, void *user_context);
+void button_mouse_on_change(bool is_pressed, void *user_context);
+void cpi_update();
+
+//---- STRUCTURES ----//
+struct cpi_setting {
+    uint16_t cpi;
+    int8_t red;
+    int8_t green;
+    int8_t blue;
+};
+
+//---- GLOBALS ----//
+static int  m_led_pins[NUM_LEDS] = { LED_RED, LED_GREEN, LED_BLUE };
+static char m_button_keys[NUM_BUTTONS] = { MOUSE_LEFT, MOUSE_RIGHT, MOUSE_MIDDLE, MOUSE_FORWARD, MOUSE_BACK };
+static struct cpi_setting m_cpi_settings[NUM_CPI_SETTINGS] = {
+    { .cpi = 500,   .red = 0, .green = 1, .blue = 0 },
+    { .cpi = 1000,  .red = 0, .green = 0, .blue = 1 },
+    { .cpi = 2000,  .red = 1, .green = 0, .blue = 0 },
+    { .cpi = 4000,  .red = 0, .green = 1, .blue = 1 }
+};
+static uint8_t m_cpi_setting_cur = 2;
+static bool m_cpi_setting_changed = false;
+
+// latchbuttons
+static LatchButton m_button_left   (BUTTON_LEFT_NO,    BUTTON_LEFT_NC,    +[](){ m_button_left.onInterrupt(); },    button_mouse_on_change, &m_button_keys[0]);
+static LatchButton m_button_right  (BUTTON_RIGHT_NO,   BUTTON_RIGHT_NC,   +[](){ m_button_right.onInterrupt(); },   button_mouse_on_change, &m_button_keys[1]);
+static LatchButton m_button_middle (BUTTON_MIDDLE_NO,  BUTTON_MIDDLE_NC,  +[](){ m_button_middle.onInterrupt(); },  button_mouse_on_change, &m_button_keys[2]);
+static LatchButton m_button_forward(BUTTON_FORWARD_NO, BUTTON_FORWARD_NC, +[](){ m_button_forward.onInterrupt(); }, button_mouse_on_change, &m_button_keys[3]);
+static LatchButton m_button_back   (BUTTON_BACK_NO,    BUTTON_BACK_NC,    +[](){ m_button_back.onInterrupt(); },    button_mouse_on_change, &m_button_keys[4]);
+static LatchButton m_button_dpi    (BUTTON_DPI_NO,     BUTTON_DPI_NC,     +[](){ m_button_dpi.onInterrupt(); },     button_dpi_on_change,   NULL);
 
 // sensor
-PMW3360 sensor;
+PMW3360 m_pmw3360_sensor;
 uint16_t xmax = 0;
 uint16_t ymax = 0;
 
@@ -85,18 +124,19 @@ volatile bool motion = false;
 #endif
 
 
+
 void setup()
 {
     Serial.begin(9600);  
     //while(!Serial);  // remove for immediate operation
 
     // PMW Initialization
-    if(sensor.begin(PMW_SS)) {
+    if(m_pmw3360_sensor.begin(PMW_SS)) {
         Serial.println("Sensor initialization successed");
     } else {
         Serial.println("Sensor initialization failed");
     }
-    sensor.setCPI(2000);
+    m_pmw3360_sensor.setCPI(2000);
 
 #if PMW_USE_INTERRUPT == 1
     pinMode(PMW_MOT, INPUT_PULLUP);
@@ -109,18 +149,26 @@ void setup()
     attachInterrupt(ENCODER_A, checkPosition, CHANGE);
     attachInterrupt(ENCODER_B, checkPosition, CHANGE);
     Mouse.begin();
-    buttons_init();
+    leds_init();
+    m_button_left.enable();
+    m_button_right.enable();
+    m_button_middle.enable();
+    m_button_forward.enable();
+    m_button_back.enable();
+    m_button_dpi.enable();
+
+    m_cpi_setting_changed = true;
 }
 
 
 void loop()
 {
-    check_buttons_state();
+    //check_buttons_state();
 
 #if PMW_USE_INTERRUPT == 1
     if(motion) {
 #endif
-        PMW3360_DATA data = sensor.readBurst(PMW3360_BURST_DATA_MIN_SIZE);
+        PMW3360_DATA data = m_pmw3360_sensor.readBurst(PMW3360_BURST_DATA_MIN_SIZE);
         if(data.isOnSurface && data.isMotion) {
             int mdx = constrain(data.dx, -127, 127);
             int mdy = constrain(data.dy, -127, 127);
@@ -141,7 +189,6 @@ void loop()
     }
 #endif
 
-
     if(encoderEvent == true) {
         static int pos = 0;
         int newPos = encoder.getPosition();
@@ -149,6 +196,11 @@ void loop()
         //Serial.printf("enc pos/dir: %d/%d\n", pos, dir);
         Mouse.move(0, 0, (pos - newPos));
         pos = newPos;
+    }
+
+    if(m_cpi_setting_changed == true) {
+        cpi_update();
+        m_cpi_setting_changed = false;
     }
 }
 
@@ -167,36 +219,42 @@ void motionDetected()
 #endif
 
 
-void buttons_init()
+void leds_init()
 {
-    for(int i = 0; i < NUMBTN; i++) {
-        pinMode(btn_pins[i], INPUT_PULLUP);
+    for(int i = 0; i < NUM_LEDS; i++) {
+        pinMode(m_led_pins[i], OUTPUT);
+        digitalWrite(m_led_pins[i], 1);
     }
 }
 
 
-void check_buttons_state() 
+void button_dpi_on_change(bool is_pressed, void *user_context)
 {
-    unsigned long elapsed = micros() - lastButtonCheck;
-  
-    if(elapsed < (DEBOUNCE * 1000UL / 8)) {
+    if(is_pressed) {
         return;
     }
-  
-    lastButtonCheck = micros();
-    
-    // Fast Debounce (works with 0 latency most of the time)
-    for(int i=0;i < NUMBTN ; i++) {
-        int state = digitalRead(btn_pins[i]);
-        btn_buffers[i] = btn_buffers[i] << 1 | state; 
+    m_cpi_setting_cur++;
+    if(m_cpi_setting_cur >= NUM_CPI_SETTINGS) {
+        m_cpi_setting_cur = 0;
+    }
+    m_cpi_setting_changed = true;
+}
 
-        if(!btn_state[i] && btn_buffers[i] == 0xFE) {  // button pressed for the first time
-            Mouse.press(btn_keys[i]);
-            btn_state[i] = true;
-        } else if( (btn_state[i] && btn_buffers[i] == 0x01) || // button released after stabilized press
-                   (btn_state[i] && btn_buffers[i] == 0xFF) ) { // force release when consequent off state (for the DEBOUNCE time) is detected 
-            Mouse.release(btn_keys[i]);
-            btn_state[i] = false;
-        }
+void cpi_update()
+{
+    struct cpi_setting *cpi = &m_cpi_settings[m_cpi_setting_cur];
+    m_pmw3360_sensor.setCPI(cpi->cpi);
+    digitalWrite(LED_RED,   !cpi->red);
+    digitalWrite(LED_GREEN, !cpi->green);
+    digitalWrite(LED_BLUE,  !cpi->blue);
+}
+
+void button_mouse_on_change(bool is_pressed, void *user_context)
+{
+    char key = *((char *)user_context);
+    if(is_pressed) {
+        Mouse.press(key);
+    } else {
+        Mouse.release(key);
     }
 }
