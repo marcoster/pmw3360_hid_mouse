@@ -102,6 +102,7 @@ static struct cpi_setting m_cpi_settings[NUM_CPI_SETTINGS] = {
 };
 static uint8_t m_cpi_setting_cur = 2;
 static bool m_cpi_setting_changed = false;
+static bool m_is_suspended = true;
 
 // latchbuttons
 static LatchButton m_button_left   (BUTTON_LEFT_NO,    BUTTON_LEFT_NC,    +[](){ m_button_left.onInterrupt(); },    button_mouse_on_change, &m_button_keys[0]);
@@ -158,6 +159,8 @@ void setup()
     m_button_dpi.enable();
 
     m_cpi_setting_changed = true;
+
+    m_is_suspended = Mouse.isSuspended();
 }
 
 
@@ -201,6 +204,19 @@ void loop()
     if(m_cpi_setting_changed == true) {
         cpi_update();
         m_cpi_setting_changed = false;
+    }
+
+    // check suspended state
+    if(Mouse.isSuspended() != m_is_suspended) {
+        m_is_suspended = Mouse.isSuspended();
+
+        if(m_is_suspended) {
+            for(int i = 0; i < NUM_LEDS; i++) {
+                digitalWrite(m_led_pins[i], 1);
+            }
+        } else {
+            cpi_update();
+        }
     }
 }
 
