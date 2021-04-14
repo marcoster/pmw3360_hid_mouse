@@ -2,6 +2,7 @@
 #include <RotaryEncoder.h>
 #include <Mouse.h>
 #include "latchbutton.h"
+#include <IntervalTimer.h>
 
 // WARNING: This example works only in Native USB supporting boards (e.g., Micro, Leonardo, etc.)
 
@@ -103,6 +104,7 @@ static struct cpi_setting m_cpi_settings[NUM_CPI_SETTINGS] = {
 static uint8_t m_cpi_setting_cur = 2;
 static bool m_cpi_setting_changed = false;
 static bool m_is_suspended = true;
+static IntervalTimer m_measure_timer;
 
 // latchbuttons
 static LatchButton m_button_left   (BUTTON_LEFT_NO,    BUTTON_LEFT_NC,    +[](){ m_button_left.onInterrupt(); },    button_mouse_on_change, &m_button_keys[0]);
@@ -161,6 +163,8 @@ void setup()
     m_cpi_setting_changed = true;
 
     m_is_suspended = Mouse.isSuspended();
+
+    //m_measure_timer.begin(mouse_measure, 125);
 }
 
 
@@ -168,29 +172,7 @@ void loop()
 {
     //check_buttons_state();
 
-#if PMW_USE_INTERRUPT == 1
-    if(motion) {
-#endif
-        PMW3360_DATA data = m_pmw3360_sensor.readBurst(PMW3360_BURST_DATA_MIN_SIZE);
-        if(data.isOnSurface && data.isMotion) {
-            int mdx = constrain(data.dx, -127, 127);
-            int mdy = constrain(data.dy, -127, 127);
-          
-            Mouse.move(mdx, mdy, 0);
-            if(abs(data.dx) > xmax) {
-                xmax = abs(data.dx);
-            }
-            if(abs(data.dy) > ymax) {
-                ymax = abs(data.dy);
-            }
-            //Serial.printf("%d / %d\n", data.dx, data.dy);
-            //Serial.printf("%d / %d\n", xmax, ymax);
-        }
-#if PMW_USE_INTERRUPT == 1
-        motion = false;
-        sei();
-    }
-#endif
+    mouse_measure();
 
     if(encoderEvent == true) {
         static int pos = 0;
@@ -218,6 +200,37 @@ void loop()
             cpi_update();
         }
     }
+}
+
+
+void mouse_measure()
+{
+    m_measure_timer.end();
+#if PMW_USE_INTERRUPT == 1
+    if(motion) {
+#endif
+        PMW3360_DATA data = m_pmw3360_sensor.readBurst(PMW3360_BURST_DATA_MIN_SIZE);
+        if(data.isOnSurface && data.isMotion) {
+        //if(data.isOnSurface) {
+            int mdx = constrain(data.dx, -127, 127);
+            int mdy = constrain(data.dy, -127, 127);
+          
+            Mouse.move(mdx, mdy, 0);
+            //if(abs(data.dx) > xmax) {
+            //    xmax = abs(data.dx);
+            //}
+            //if(abs(data.dy) > ymax) {
+            //    ymax = abs(data.dy);
+            //}
+            //Serial.printf("%d / %d\n", data.dx, data.dy);
+            //Serial.printf("%d / %d\n", xmax, ymax);
+        }
+#if PMW_USE_INTERRUPT == 1
+        motion = false;
+        sei();
+    }
+#endif
+    //m_measure_timer.begin(mouse_measure, 50);
 }
 
 
