@@ -1,7 +1,8 @@
-#include <PMW3360.h>
+#include <PMW3389.h>
 #include <RotaryEncoder.h>
 #include <Mouse.h>
 #include "latchbutton.h"
+#include "button.h"
 #include <IntervalTimer.h>
 
 // WARNING: This example works only in Native USB supporting boards (e.g., Micro, Leonardo, etc.)
@@ -47,7 +48,13 @@ Module   Arduino
                                raw data values within normal operating ranges.
  */
 //---- DEFINITIONS ----//
+
+#define PCB_VERSION_1 1
+#define PCB_VERSION_2 2
+#define PCB_VERSION PCB_VERSION_2
+
 // User define values
+#if PCB_VERSION == PCB_VERSION_1
 #define PMW_SS          10          // Slave Select pin. Connect this to SS on the module.
 #define PMW_MOT         17
 
@@ -77,6 +84,34 @@ Module   Arduino
 
 #define PMW_USE_INTERRUPT 0
 #define NUM_CPI_SETTINGS  4
+
+#elif PCB_VERSION == PCB_VERSION_2
+#define PMW_SS              0          // Slave Select pin. Connect this to SS on the module.
+#define PMW_MOT             32
+
+#define NUM_BUTTONS        5        // number of buttons attached
+#define BUTTON_LEFT_NO     8          // left button pin
+#define BUTTON_LEFT_NC     9
+#define BUTTON_RIGHT_NO    3          // right button pin
+#define BUTTON_RIGHT_NC    2
+#define BUTTON_MIDDLE_NO   4
+#define BUTTON_FORWARD_NO  19
+#define BUTTON_BACK_NO     17
+#define BUTTON_DPI_NO      5
+
+#define ENCODER_A       6
+#define ENCODER_B       7
+
+#define NUM_LEDS        3
+#define LED_RED         37
+#define LED_GREEN       36
+#define LED_BLUE        35
+
+#define PMW_USE_INTERRUPT 0
+#define NUM_CPI_SETTINGS  4
+#elif
+#error "invalid PCB_VERSION"
+#endif
 
 
 //---- FUNCTION PROTOTYPES ----//
@@ -109,13 +144,14 @@ static IntervalTimer m_measure_timer;
 // latchbuttons
 static LatchButton m_button_left   (BUTTON_LEFT_NO,    BUTTON_LEFT_NC,    +[](){ m_button_left.onInterrupt(); },    button_mouse_on_change, &m_button_keys[0]);
 static LatchButton m_button_right  (BUTTON_RIGHT_NO,   BUTTON_RIGHT_NC,   +[](){ m_button_right.onInterrupt(); },   button_mouse_on_change, &m_button_keys[1]);
-static LatchButton m_button_middle (BUTTON_MIDDLE_NO,  BUTTON_MIDDLE_NC,  +[](){ m_button_middle.onInterrupt(); },  button_mouse_on_change, &m_button_keys[2]);
-static LatchButton m_button_forward(BUTTON_FORWARD_NO, BUTTON_FORWARD_NC, +[](){ m_button_forward.onInterrupt(); }, button_mouse_on_change, &m_button_keys[3]);
-static LatchButton m_button_back   (BUTTON_BACK_NO,    BUTTON_BACK_NC,    +[](){ m_button_back.onInterrupt(); },    button_mouse_on_change, &m_button_keys[4]);
-static LatchButton m_button_dpi    (BUTTON_DPI_NO,     BUTTON_DPI_NC,     +[](){ m_button_dpi.onInterrupt(); },     button_dpi_on_change,   NULL);
+static Button m_button_middle (BUTTON_MIDDLE_NO, +[](){ m_button_middle.onInterrupt();}, button_mouse_on_change, &m_button_keys[2], +[](){ m_button_middle.onDebounce();} );
+//static LatchButton m_button_middle (BUTTON_MIDDLE_NO,  BUTTON_MIDDLE_NC,  +[](){ m_button_middle.onInterrupt(); },  button_mouse_on_change, &m_button_keys[2]);
+static Button m_button_forward(BUTTON_FORWARD_NO, +[](){ m_button_forward.onInterrupt(); }, button_mouse_on_change, &m_button_keys[3], +[](){ m_button_forward.onDebounce();} );
+static Button m_button_back   (BUTTON_BACK_NO,    +[](){ m_button_back.onInterrupt(); },    button_mouse_on_change, &m_button_keys[4], +[](){ m_button_back.onDebounce();} );
+static Button m_button_dpi    (BUTTON_DPI_NO,     +[](){ m_button_dpi.onInterrupt(); },     button_dpi_on_change,   NULL, +[](){ m_button_dpi.onDebounce();} );
 
 // sensor
-PMW3360 m_pmw3360_sensor;
+PMW3389 m_pmw_sensor;
 uint16_t xmax = 0;
 uint16_t ymax = 0;
 
@@ -134,12 +170,12 @@ void setup()
     //while(!Serial);  // remove for immediate operation
 
     // PMW Initialization
-    if(m_pmw3360_sensor.begin(PMW_SS)) {
+    if(m_pmw_sensor.begin(PMW_SS)) {
         Serial.println("Sensor initialization successed");
     } else {
         Serial.println("Sensor initialization failed");
     }
-    m_pmw3360_sensor.setCPI(2000);
+    m_pmw_sensor.setCPI(2000);
 
 #if PMW_USE_INTERRUPT == 1
     pinMode(PMW_MOT, INPUT_PULLUP);
@@ -209,7 +245,7 @@ void mouse_measure()
 #if PMW_USE_INTERRUPT == 1
     if(motion) {
 #endif
-        PMW3360_DATA data = m_pmw3360_sensor.readBurst(PMW3360_BURST_DATA_MIN_SIZE);
+        PMW3389_DATA data = m_pmw_sensor.readBurst(PMW3389_BURST_DATA_MIN_SIZE);
         if(data.isOnSurface && data.isMotion) {
         //if(data.isOnSurface) {
             int mdx = constrain(data.dx, -127, 127);
@@ -272,7 +308,7 @@ void button_dpi_on_change(bool is_pressed, void *user_context)
 void cpi_update()
 {
     struct cpi_setting *cpi = &m_cpi_settings[m_cpi_setting_cur];
-    m_pmw3360_sensor.setCPI(cpi->cpi);
+    m_pmw_sensor.setCPI(cpi->cpi);
     digitalWrite(LED_RED,   !cpi->red);
     digitalWrite(LED_GREEN, !cpi->green);
     digitalWrite(LED_BLUE,  !cpi->blue);
