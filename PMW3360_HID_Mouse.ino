@@ -107,12 +107,13 @@ Module   Arduino
 #define LED_GREEN       36
 #define LED_BLUE        35
 
-#define PMW_USE_INTERRUPT 0
+#define PMW_USE_INTERRUPT 1
 #define NUM_CPI_SETTINGS  4
 #elif
 #error "invalid PCB_VERSION"
 #endif
 
+#define MEASURE_FORCED_INTERVAL_TIME 100 * 1000
 
 //---- FUNCTION PROTOTYPES ----//
 void button_dpi_on_change(bool is_pressed, void *user_context);
@@ -179,10 +180,10 @@ void setup()
 
 #if PMW_USE_INTERRUPT == 1
     pinMode(PMW_MOT, INPUT_PULLUP);
-    //attachInterrupt(digitalPinToInterrupt(MOT), motionDetected, FALLING);
-    //if(digitalRead(MOT) == LOW) {
-    //  motion = true;
-    //}
+    attachInterrupt(digitalPinToInterrupt(PMW_MOT), motionDetected, FALLING);
+    if(digitalRead(PMW_MOT) == LOW) {
+      motion = true;
+    }
 #endif
 
     attachInterrupt(ENCODER_A, checkPosition, CHANGE);
@@ -200,7 +201,7 @@ void setup()
 
     m_is_suspended = Mouse.isSuspended();
 
-    //m_measure_timer.begin(mouse_measure, 125);
+    m_measure_timer.begin(measure_timer_callback, MEASURE_FORCED_INTERVAL_TIME);
 }
 
 
@@ -241,9 +242,11 @@ void loop()
 
 void mouse_measure()
 {
-    m_measure_timer.end();
+    //m_measure_timer.end();
 #if PMW_USE_INTERRUPT == 1
     if(motion) {
+        m_measure_timer.end();
+        m_measure_timer.begin(mouse_measure, MEASURE_FORCED_INTERVAL_TIME);
 #endif
         PMW3389_DATA data = m_pmw_sensor.readBurst(PMW3389_BURST_DATA_MIN_SIZE);
         if(data.isOnSurface && data.isMotion) {
@@ -266,7 +269,11 @@ void mouse_measure()
         sei();
     }
 #endif
-    //m_measure_timer.begin(mouse_measure, 50);
+}
+
+void measure_timer_callback()
+{
+    motion = true;
 }
 
 
